@@ -12,6 +12,7 @@ from Backend.helper.pyro import restart_notification, setup_bot_commands
 from Backend.pyrofork.bot import Userbot, StreamBot
 from Backend.pyrofork.clients import initialize_clients
 from Backend.helper import subscription_task_manager
+from Backend.helper.scan_manager import scan_manager, dbcheck_manager
 from Backend.helper.link_checker import DeadLinkChecker
 from Backend.fastapi.main import app
 from Backend.helper.auto_catalog import (
@@ -31,6 +32,13 @@ async def start_services():
 
         await SettingsManager.initialize(db)
         await asleep(0.5)
+        
+        try:
+            await scan_manager.load(db)
+            dbcheck_manager.bind_db(db)
+        except Exception as e:
+            LOGGER.error(f"Failed to restore scan manager state on startup: {e}")
+        await asleep(0.3)
 
         try:
             await db.reload_extra_databases(SettingsManager.current().extra_databases)
