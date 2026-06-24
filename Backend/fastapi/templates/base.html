@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" class="{{ 'dark' if theme.is_dark else 'light' }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,7 @@
 
 <style>
 :root {
+    color-scheme: {{ 'dark' if theme.is_dark else 'light' }};
     --primary: {{ theme.colors.primary }};
     --secondary: {{ theme.colors.secondary }};
     --accent: {{ theme.colors.accent }};
@@ -88,7 +89,7 @@ body {
 .toast.info    { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
 
 .toast-title   { font-weight: 800; font-size: 0.9rem; line-height: 1.2; }
-.toast-message { margin-top: 0.15rem; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.35; }
+.toast-message { margin-top: 0.15rem; font-size: 0.82rem; color: var(--text-sec); line-height: 1.35; }
 
 @keyframes toast-in  { from { opacity: 0; transform: translateY(-10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes toast-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-8px) scale(0.98); } }
@@ -107,6 +108,87 @@ body {
     padding: 0.5rem 2rem 0.5rem 1rem;
     font-size: 0.875rem;
     cursor: pointer;
+}
+
+input, select, textarea, button {
+    font-family: inherit;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+select,
+textarea {
+    color: var(--text);
+}
+input::placeholder,
+textarea::placeholder {
+    color: color-mix(in srgb, var(--text-sec) 78%, transparent);
+    opacity: 1;
+}
+select option,
+select optgroup {
+    background-color: var(--card);
+    color: var(--text);
+}
+/* Autofill no longer paints white-on-white in dark themes */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+    -webkit-text-fill-color: var(--text);
+    -webkit-box-shadow: 0 0 0 1000px color-mix(in srgb, var(--card) 92%, transparent) inset;
+    caret-color: var(--text);
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ── Modern theme picker (nav) ──────────────────────────────────────────────*/
+.theme-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+.theme-chip {
+    --sw-bg: var(--bg);
+    --sw-primary: var(--primary);
+    --sw-accent: var(--accent);
+    --sw-text: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--sw-text) 18%, transparent);
+    background: var(--sw-bg);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+.theme-chip:hover {
+    transform: translateY(-1px);
+    border-color: var(--sw-primary);
+}
+.theme-chip.active {
+    border-color: var(--sw-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--sw-primary) 55%, transparent);
+}
+.theme-chip-dots { display: flex; gap: 3px; flex-shrink: 0; }
+.theme-chip-dots .dot {
+    width: 0.7rem; height: 0.7rem; border-radius: 9999px;
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sw-primary) 70%, transparent);
+}
+.theme-chip-name {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--sw-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.1;
+}
+.theme-chip .chip-check {
+    position: absolute;
+    top: 0.3rem; right: 0.4rem;
+    font-size: 0.6rem;
+    color: var(--sw-primary);
 }
 
 #overlay {
@@ -184,7 +266,7 @@ tailwind.config = {
                     <i class="fa-solid fa-user"></i>
                 </button>
 
-                <div id="user-dropdown" class="absolute right-0 top-14 w-64 glass-panel rounded-2xl p-4 opacity-0 scale-95 pointer-events-none transition-all duration-200 origin-top-right z-50">
+                <div id="user-dropdown" class="absolute right-0 top-14 w-72 glass-panel rounded-2xl p-4 opacity-0 scale-95 pointer-events-none transition-all duration-200 origin-top-right z-50">
                     <div class="mb-3 border-b border-white/10 pb-3">
                         <p class="text-sm font-bold text-text">{{ current_user }}</p>
                         <p class="text-[10px] text-green-400 font-bold uppercase tracking-wider flex items-center gap-1">
@@ -192,16 +274,28 @@ tailwind.config = {
                         </p>
                     </div>
 
-                    <form method="post" action="/set-theme" class="mb-4">
-                        <label class="text-[10px] uppercase text-text-secondary font-bold mb-1 block ml-2">App Theme</label>
-                        <select name="theme" onchange="this.form.submit()" class="theme-select w-full">
+                    <div class="mb-4">
+                        <label class="text-[10px] uppercase text-text-secondary font-bold mb-2 block ml-1">App Theme</label>
+                        <div class="theme-grid">
                             {% for theme_key, theme_data in themes.items() %}
-                            <option value="{{ theme_key }}" {% if current_theme==theme_key %}selected{% endif %}>
-                                {{ theme_data.name }}
-                            </option>
+                            <button type="button"
+                                onclick="selectTheme('{{ theme_key }}')"
+                                class="theme-chip {% if current_theme==theme_key %}active{% endif %}"
+                                title="{{ theme_data.name }}"
+                                style="--sw-bg:{{ theme_data.colors.background }};--sw-primary:{{ theme_data.colors.primary }};--sw-accent:{{ theme_data.colors.accent }};--sw-text:{{ theme_data.colors.text }}">
+                                <span class="theme-chip-dots">
+                                    <span class="dot" style="background:{{ theme_data.colors.primary }}"></span>
+                                    <span class="dot" style="background:{{ theme_data.colors.accent }}"></span>
+                                </span>
+                                <span class="theme-chip-name">{{ theme_data.name }}</span>
+                                {% if current_theme==theme_key %}<i class="fa-solid fa-check chip-check"></i>{% endif %}
+                            </button>
                             {% endfor %}
-                        </select>
-                    </form>
+                        </div>
+                        <form id="theme-form" method="post" action="/set-theme" class="hidden">
+                            <input type="hidden" name="theme" id="theme-input">
+                        </form>
+                    </div>
 
                     <a href="/admin/settings"
                        class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold mb-2 transition-all"
@@ -346,6 +440,14 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function selectTheme(key) {
+    const input = document.getElementById('theme-input');
+    const form = document.getElementById('theme-form');
+    if (!input || !form) return;
+    input.value = key;
+    form.submit();
 }
 
 if(btn) btn.onclick = toggleMenu;
