@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from Backend.fastapi.security.tokens import verify_token
 from Backend.logger import LOGGER
 from Backend.helper.global_search import global_search, is_global_search_enabled
+from Backend.pyrofork.bot import get_streambot_url
 
 router = APIRouter(prefix="/stremio", tags=["Stremio Addon"])
 
@@ -18,6 +19,18 @@ router = APIRouter(prefix="/stremio", tags=["Stremio Addon"])
 ADDON_NAME = "Telegram Streams"
 ADDON_VERSION = __version__
 PAGE_SIZE = 15
+
+_membership_cache: dict = {}
+_MEMBERSHIP_TTL = 60  # seconds
+_MEMBERSHIP_CACHE_MAX = 5000  
+
+
+def invalidate_membership_cache(user_id: int | None = None) -> None:
+    if user_id is None:
+        _membership_cache.clear()
+        return
+    for key in [k for k in _membership_cache if k[1] == user_id]:
+        _membership_cache.pop(key, None)
 
 # Define available genres
 GENRES = [
@@ -344,11 +357,6 @@ async def get_meta(token: str, media_type: str, id: str, token_data: dict = Depe
     return {"meta": meta_obj}
 
 async def _global_streams_for(token: str, imdb_id: str, media_type: str, season_num: Optional[int], episode_num: Optional[int]) -> list:
-    """Builds Global Search stream entries for a catalog item that has no
-    local DB row at all. Since there's no local title to read, the
-    canonical title (and, for a specific episode, confirmation it exists)
-    is resolved from Cinemeta via Backend.helper.imdb — the same source
-    used everywhere else in this codebase for metadata."""
     from Backend.helper.imdb import get_detail, get_season
 
     imdb_media_type = "tvSeries" if media_type == "series" else "movie"
@@ -388,6 +396,42 @@ async def _global_streams_for(token: str, imdb_id: str, media_type: str, season_
     return streams
 
 
+async def _is_subscription_member(user_id: int) -> bool:
+    import time
+    from Backend.pyrofork.bot import StreamBot
+    from pyrogram.enums import ChatMemberStatus
+    from pyrogram.errors import UserNotParticipant
+
+    group_id = SettingsManager.current().subscription_group_id
+    if not group_id:
+        return True
+
+    cache_key = (group_id, user_id)
+    cached = _membership_cache.get(cache_key)
+    now_ts = time.monotonic()
+    if cached and (now_ts - cached[0]) < _MEMBERSHIP_TTL:
+        return cached[1]
+
+    try:
+        member = await StreamBot.get_chat_member(group_id, user_id)
+        result = member.status not in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED)
+    except UserNotParticipant:
+        result = False
+    except Exception as e:
+        # Fail open and do NOT cache, so the next request retries.
+        LOGGER.warning(f"[SUBSCRIPTION] Membership check failed for user {user_id}: {e}")
+        return True
+
+    if len(_membership_cache) >= _MEMBERSHIP_CACHE_MAX:
+        for k in [k for k, v in _membership_cache.items() if (now_ts - v[0]) >= _MEMBERSHIP_TTL]:
+            _membership_cache.pop(k, None)
+        if len(_membership_cache) >= _MEMBERSHIP_CACHE_MAX:
+            _membership_cache.clear()
+
+    _membership_cache[cache_key] = (now_ts, result)
+    return result
+
+
 @router.get("/{token}/stream/{media_type}/{id}.json")
 async def get_streams(
     token: str,
@@ -400,12 +444,27 @@ async def get_streams(
         return {
             "streams": [
                 {
-                    "name": "🚫 Subscription Expired",
-                    "title": "Your subscription has expired.\nRenew via the bot to continue watching.",
-                    "url": SettingsManager.current().subscription_url
+                    "name": "🚫 Plan Expired",
+                    "title": "Your plan is expired.\nRenew it from the bot to continue watching.",
+                    "url": get_streambot_url()
                 }
             ]
         }
+
+    # When the subscription feature is on, the user must be a current member of
+    # the configured subscription group/channel to stream anything.
+    if SettingsManager.current().subscription:
+        user_id = token_data.get("user_id")
+        if user_id and not await _is_subscription_member(int(user_id)):
+            return {
+                "streams": [
+                    {
+                        "name": "📢 Join Required",
+                        "title": "First join the channel to stream it.\nThen wait for 2 min for verification",
+                        "url": get_streambot_url()
+                    }
+                ]
+            }
 
     if token_data.get("limit_exceeded"):
         limit_type = token_data["limit_exceeded"]
@@ -483,9 +542,6 @@ async def get_streams(
                         "url": original_url
                     })
     elif is_global_search_enabled():
-        # Not in the local catalog at all — resolve the real title via
-        # Cinemeta (we have no local DB row to read a title from) and
-        # search for it across the Userbot's channels instead.
         try:
             streams.extend(
                 await _global_streams_for(token, imdb_id, media_type, season_num, episode_num)

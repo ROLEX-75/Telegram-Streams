@@ -1,12 +1,10 @@
 import asyncio
 from pyrogram import Client
 from Backend.helper.settings_manager import SettingsManager
+from Backend.pyrofork.bot import get_streambot_url
 from Backend import db
 from datetime import datetime
 from Backend.logger import LOGGER
-
-
-
 
 async def subscription_checker_loop(bot: Client):
     while True:
@@ -34,7 +32,7 @@ async def subscription_checker_loop(bot: Client):
                         user_id,
                         "❌ <b>Subscription Expired</b>\n\n"
                         "Your subscription has expired, and you have been removed from the private group.\n"
-                        f"Please go to {SettingsManager.current().subscription_url} and send /start to renew your subscription and regain access."
+                        f"Please open the bot {get_streambot_url()} and send /start to renew your subscription and regain access."
                     )
                     LOGGER.info(f"Kicked expired user {user_id}")
                 except Exception as e:
@@ -50,7 +48,7 @@ async def subscription_checker_loop(bot: Client):
                         user_id,
                         f"⚠️ <b>Subscription Expiring Soon</b>\n\n"
                         f"Your subscription will expire on <b>{expiry.strftime('%Y-%m-%d %H:%M UTC')}</b>.\n"
-                        f"Please go to {SettingsManager.current().subscription_url} and send /start to renew your plan before you lose access to the group!"
+                        f"Please open the bot {get_streambot_url()} and send /start to renew your plan before you lose access to the group!"
                     )
                     await db.mark_reminder_sent(user_id)
                     LOGGER.info(f"Sent expiry reminder to user {user_id}")
@@ -60,10 +58,8 @@ async def subscription_checker_loop(bot: Client):
             await asyncio.sleep(3600)
 
         except asyncio.CancelledError:
-            # Raised by subscription_task_manager.stop() — exit cleanly,
-            # don't swallow it as a generic error.
             LOGGER.info("Subscription checker loop cancelled.")
             raise
         except Exception as e:
             LOGGER.error(f"Error in subscription checker loop: {e}")
-            await asyncio.sleep(300)  # Wait 5 minutes before retrying on error
+            await asyncio.sleep(300)
