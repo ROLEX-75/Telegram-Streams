@@ -130,17 +130,31 @@ def _year_from_str(year_val) -> int:
     m = re.search(r"(\d{4})", str(year_val))
     return int(m.group(1)) if m else 0
 
-def _score_candidate(query_title: str, query_year: Optional[int], result_title: str, result_year: int) -> float:
+def _score_candidate(
+    query_title: str,
+    query_year: Optional[int],
+    result_title: str,
+    result_year: int,
+    year_reliable: bool = True,
+) -> float:
     score = _title_similarity(query_title, result_title)
+    
+    if score < 0.5:
+        return score
+
     if query_year and result_year:
         diff = abs(int(query_year) - result_year)
-        if diff > 2:
-            score = max(0.0, score - 0.10 * (diff - 2))
-        elif score >= 0.5:
-            if diff == 0:
-                score = min(1.0, score + 0.20)
-            elif diff == 1:
-                score = min(1.0, score + 0.07)
+        if year_reliable:
+            if diff > 2:
+                score = max(0.0, score - 0.10 * (diff - 2))
+            elif score >= 0.80:
+                if diff == 0:
+                    score = min(1.0, score + 0.20)
+                elif diff == 1:
+                    score = min(1.0, score + 0.07)
+        else:
+            if diff == 0 and score >= 0.80:
+                score = min(1.0, score + 0.05)
     return score
 
 def _build_query_variants(title: str, year: Optional[int] = None) -> List[str]:
@@ -209,12 +223,17 @@ async def safe_imdb_search(title: str, type_: str, year: Optional[int] = None) -
     best_score = 0.0
     best_title = ""
 
+    year_reliable = type_ == "movie"
+
     for query in query_variants:
         try:
             async with API_SEMAPHORE:
                 results = await search_title_multi(query=query, type=type_, limit=8)
             for r in results:
-                score = _score_candidate(title, year, r.get("title", ""), _year_from_str(r.get("year", "")))
+                score = _score_candidate(
+                    title, year, r.get("title", ""), _year_from_str(r.get("year", "")),
+                    year_reliable=year_reliable,
+                )
                 if score > best_score:
                     best_score, best_id, best_title = score, r.get("id"), r.get("title", "")
                 if best_score >= _STRONG_MATCH:
@@ -280,11 +299,13 @@ async def _pick_best_tmdb_result(results, query_title: str, query_year: Optional
     if not results:
         return None
 
+    year_reliable = media_type == "movie"
+
     scored = []
     best_item, best_score = None, 0.0
     for item in results:
         r_title, r_year = _tmdb_title_year(item, media_type)
-        score = _score_candidate(query_title, query_year, r_title, r_year)
+        score = _score_candidate(query_title, query_year, r_title, r_year, year_reliable=year_reliable)
         scored.append((score, item, r_year))
         if score > best_score:
             best_score, best_item = score, item
@@ -296,7 +317,7 @@ async def _pick_best_tmdb_result(results, query_title: str, query_year: Optional
     for _, item, r_year in scored[:_ALT_TITLE_LOOKUPS]:
         alt_titles = await _tmdb_alternative_titles(media_type, getattr(item, "id", None))
         for alt in alt_titles:
-            alt_score = _score_candidate(query_title, query_year, alt, r_year)
+            alt_score = _score_candidate(query_title, query_year, alt, r_year, year_reliable=year_reliable)
             if alt_score > best_score:
                 best_score, best_item = alt_score, item
                 if best_score >= _STRONG_MATCH:
