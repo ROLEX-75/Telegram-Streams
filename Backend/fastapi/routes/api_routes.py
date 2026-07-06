@@ -1045,7 +1045,13 @@ async def create_custom_catalog_api(payload: dict):
 async def update_custom_catalog_api(catalog_id: str, payload: dict):
     name = payload.get("name")
     visibility, tokens = _clean_visibility(payload)
-    result = await db.update_custom_catalog(catalog_id, name=name, visibility=visibility, allowed_tokens=tokens)
+    exclusive = payload.get("exclusive")
+    exclusive = bool(exclusive) if exclusive is not None else None
+    searchable = bool(payload.get("searchable"))
+    result = await db.update_custom_catalog(
+        catalog_id, name=name, visibility=visibility, allowed_tokens=tokens,
+        exclusive=exclusive, searchable=searchable,
+    )
     if not result:
         catalog = await db.get_custom_catalog(catalog_id)
         if not catalog:
@@ -1141,8 +1147,19 @@ async def add_custom_catalog_item_api(catalog_id: str, payload: dict):
         raise HTTPException(status_code=404, detail="Catalog not found.")
 
     added = await db.add_item_to_custom_catalog(catalog_id, int(tmdb_id), int(db_index), media_type)
+    visibility_synced = None
+    if added:
+        #----- Adding to a hidden/restricted catalog adopts that visibility onto the title
+        cat_vis = catalog.get("visibility")
+        if cat_vis in ("owner", "tokens"):
+            await db.set_media_visibility(
+                int(tmdb_id), int(db_index), media_type, cat_vis, catalog.get("allowed_tokens") or []
+            )
+            visibility_synced = cat_vis
+        if catalog.get("exclusive"):
+            await db.mark_item_exclusive(catalog_id, int(tmdb_id), int(db_index), media_type, catalog.get("searchable", False))
     message = "Added to catalog." if added else "Already exists in this catalog."
-    return {"message": message, "added": added}
+    return {"message": message, "added": added, "visibility_synced": visibility_synced}
 
 
 async def remove_custom_catalog_item_api(
@@ -1160,6 +1177,8 @@ async def remove_custom_catalog_item_api(
     )
     if not removed:
         return {"message": "Item was not in this catalog.", "removed": False}
+    if catalog.get("exclusive"):
+        await db.clear_item_exclusive(int(tmdb_id), int(db_index), _normalize_media_type(media_type))
     return {"message": "Removed from catalog.", "removed": True}
 
 
