@@ -100,7 +100,7 @@ def remove_urls(text):
     if not text:
         return ""
 
-    url_pattern = r'\b(?:https?|ftp):\/\/[^\s/$.?#].[^\s]*'
+    url_pattern = r'\b(?:(?:https?|ftp):\/\/|www\.)[^\s/$.?#].[^\s]*'
     text_without_urls = re.sub(url_pattern, '', text)
     cleaned_text = re.sub(r'\s+', ' ', text_without_urls).strip()
 
