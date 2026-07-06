@@ -205,6 +205,8 @@ def _score_candidate(
                     score = min(1.0, score + 0.07)
         elif diff == 0 and score >= 0.80:
             score = min(1.0, score + 0.05)
+    elif query_year and year_reliable and not year_lower_bound:
+        score = max(0.0, score - 0.20)
     return score
 
 
