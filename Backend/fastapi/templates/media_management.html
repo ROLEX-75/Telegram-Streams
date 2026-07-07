@@ -53,7 +53,7 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div class="rounded-2xl border border-hairline bg-surface px-4 py-3">
                     <p class="text-[11px] uppercase tracking-wider text-text-secondary font-bold">Current view</p>
-                    <p class="mt-1 text-sm font-semibold text-text capitalize">{{ media_type }}</p>
+                    <p class="mt-1 text-sm font-semibold text-text">{% if media_type == 'tv' %}TV{% else %}{{ media_type | capitalize }}{% endif %}</p>
                 </div>
                 <div class="rounded-2xl border border-hairline bg-surface px-4 py-3">
                     <p class="text-[11px] uppercase tracking-wider text-text-secondary font-bold">Actions</p>

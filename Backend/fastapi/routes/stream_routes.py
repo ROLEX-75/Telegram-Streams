@@ -18,7 +18,7 @@ from Backend.helper.custom_dl import ACTIVE_STREAMS, RECENT_STREAMS, ByteStreame
 from Backend.helper.encrypt import decode_string
 from Backend.helper.utils import track_usage
 from Backend.helper.virtual_dl import resolve_virtual_parts, virtual_stream_generator
-from Backend.helper.exceptions import FIleNotFound
+from Backend.helper.exceptions import FileNotFound
 from Backend.logger import LOGGER
 from Backend.pyrofork.bot import (
     USERBOT_CLIENT_INDEX,
@@ -243,7 +243,7 @@ async def media_streamer(request: Request, chat_id: int, msg_id: int, token: str
     streamer: ByteStreamer = _get_streamer(tg_client, index)
     try:
         file_id = await streamer.get_file_properties(chat_id=chat_id, message_id=msg_id)
-    except FIleNotFound:
+    except FileNotFound:
         raise HTTPException(status_code=404, detail="Media not found")
 
     file_size = file_id.file_size

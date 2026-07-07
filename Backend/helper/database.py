@@ -1569,12 +1569,16 @@ class Database:
             if episode_number is not None and season_number is not None:
                 tv_show = await self.dbs[db_key]["tv"].find_one({"imdb_id": imdb_id})
                 if tv_show:
+                    target_details = None
+                    combined_telegrams = []
+                    
                     for season in tv_show.get("seasons", []):
-                        if season.get("season_number") == season_number:
+                        s_num = season.get("season_number")
+                        if s_num == season_number:
                             for episode in season.get("episodes", []):
                                 if episode.get("episode_number") == episode_number:
-                                    details = convert_objectid_to_str(episode)
-                                    details.update({
+                                    target_details = convert_objectid_to_str(episode)
+                                    target_details.update({
                                         "imdb_id": imdb_id,
                                         "type": "tv",
                                         "season_number": season_number,
@@ -1582,7 +1586,37 @@ class Database:
                                         "backdrop": episode.get("episode_backdrop"),
                                         "db_index": db_idx
                                     })
-                                    return details
+                        elif s_num == 0:
+                            for ep in season.get("episodes", []):
+                                title = ep.get("title", "")
+                                import re
+                                s_match = re.search(r"S(\d+)", title)
+                                if s_match and int(s_match.group(1)) == season_number:
+                                    if "Complete" in title:
+                                        combined_telegrams.extend(ep.get("telegram", []))
+                                    else:
+                                        e_match = re.search(r"E(\d+)-E(\d+)", title)
+                                        if e_match and int(e_match.group(1)) <= episode_number <= int(e_match.group(2)):
+                                            combined_telegrams.extend(ep.get("telegram", []))
+                    
+                    if target_details or combined_telegrams:
+                        if not target_details:
+                            target_details = {
+                                "imdb_id": imdb_id,
+                                "type": "tv",
+                                "season_number": season_number,
+                                "episode_number": episode_number,
+                                "db_index": db_idx,
+                                "telegram": []
+                            }
+                        if combined_telegrams:
+                            existing = target_details.get("telegram", [])
+                            existing_ids = {t.get("id") for t in existing if "id" in t}
+                            for ct in combined_telegrams:
+                                if ct.get("id") not in existing_ids:
+                                    existing.append(ct)
+                            target_details["telegram"] = existing
+                        return target_details
             
             elif season_number is not None:
                 tv_show = await self.dbs[db_key]["tv"].find_one({"imdb_id": imdb_id})

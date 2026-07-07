@@ -21,7 +21,7 @@ _EMOJI_PATTERN = re.compile(
     "\U0001F680-\U0001F6FF"   #----- transport & map
     "\U0001F700-\U0001FAFF"   #----- extended symbols (geometric, supplemental, etc.)
     "\U00002702-\U000027B0"   #----- dingbats
-    "\U000024C2-\U0001F251"   #----- enclosed chars
+    "\u24C2-\u24FF\U0001F100-\U0001F251"   #----- enclosed chars
     "\u2600-\u26FF"           #----- misc symbols (☆, ★, ☀, ©, ®, ™, …)
     "\u2700-\u27BF"           #----- dingbats block
     "\uFE00-\uFE0F"           #----- variation selectors
@@ -212,16 +212,13 @@ async def restart_notification():
         LOGGER.error(f"Error in restart_notification: {e}")
 
 
-#----- Bot commands
+#----- Bot commands (stats, log and restart moved to the web app)
 commands = [
     BotCommand("start", "🚀 Start the bot"),
-    BotCommand("set", "🎬 Manually add IMDb metadata"),
-    BotCommand("channels", "📡 List AUTH channels"),
+    BotCommand("set", "📝 Manually add IMDb metadata"),
+    BotCommand("channels", "📢 List AUTH channels"),
     BotCommand("addchannel", "➕ Add a channel"),
     BotCommand("removechannel", "➖ Remove a channel"),
-    BotCommand("stats", "📊 DB and system stats"),
-    BotCommand("log", "📄 Send the log file"),
-    BotCommand("restart", "♻️ Restart the bot"),
 ]
 
 

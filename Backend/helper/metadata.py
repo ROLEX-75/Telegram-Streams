@@ -628,49 +628,6 @@ def _build_imdb_tv_payload(imdb, ep, imdb_id, title, season, episode, quality, e
     }
 
 
-#----- ── Anime helpers ───────────────────────────────────────────────────────────
-def _is_anime_channel(channel) -> bool:
-    anime_channels = SettingsManager.current().anime_channels
-    if not anime_channels:
-        return False
-    target = str(channel).replace("-100", "")
-    return any(str(c).strip().replace("-100", "") == target for c in anime_channels)
-
-
-async def _fetch_anime_tv(title, season, episode, encoded_string, year, quality) -> dict | None:
-    try:
-        result = await fetch_anime_metadata(title, season, episode, encoded_string, year, quality)
-    except Exception as e:
-        LOGGER.warning(f"[ANIME] metadata error for '{title}': {e}")
-        return None
-    if result is None:
-        return None
-    if not result.get("imdb_id") and result.get("tmdb_id"):
-        result["imdb_id"] = await _tmdb_external_imdb_id("tv", result["tmdb_id"])
-    if not result.get("imdb_id"):
-        LOGGER.info(f"[ANIME] No imdb id for '{title}' -> falling back to TMDb/Cinemeta")
-        return None
-    LOGGER.info(f"[ANIME] Matched '{result.get('title')}' [{result.get('imdb_id')}] S{season:02d}E{episode:02d}")
-    return result
-
-
-async def _fetch_anime_movie(title, encoded_string, year, quality) -> dict | None:
-    try:
-        result = await fetch_anime_movie_metadata(title, encoded_string, year, quality)
-    except Exception as e:
-        LOGGER.warning(f"[ANIME] movie metadata error for '{title}': {e}")
-        return None
-    if result is None:
-        return None
-    if not result.get("imdb_id") and result.get("tmdb_id"):
-        result["imdb_id"] = await _tmdb_external_imdb_id("movie", result["tmdb_id"])
-    if not result.get("imdb_id"):
-        LOGGER.info(f"[ANIME] No imdb id for movie '{title}' -> falling back to TMDb/Cinemeta")
-        return None
-    LOGGER.info(f"[ANIME] Matched movie '{result.get('title')}' [{result.get('imdb_id')}]")
-    return result
-
-
 #----- ── TV & movie resolution ───────────────────────────────────────────────────
 async def fetch_tv_metadata(title, season, episode, encoded_string, year=None, quality=None, default_id=None) -> dict | None:
     imdb_id, tmdb_id, explicit_imdb_id, use_tmdb = _split_default_id(default_id)
@@ -757,6 +714,49 @@ async def fetch_movie_metadata(title, encoded_string, year=None, quality=None, d
         return _build_tmdb_movie_payload(movie, quality, encoded_string)
 
     return _build_imdb_movie_payload(imdb_details, imdb_id, title, quality, encoded_string)
+
+
+#----- ── Anime helpers ───────────────────────────────────────────────────────────
+def _is_anime_channel(channel) -> bool:
+    anime_channels = SettingsManager.current().anime_channels
+    if not anime_channels:
+        return False
+    target = str(channel).replace("-100", "")
+    return any(str(c).strip().replace("-100", "") == target for c in anime_channels)
+
+
+async def _fetch_anime_tv(title, season, episode, encoded_string, year, quality) -> dict | None:
+    try:
+        result = await fetch_anime_metadata(title, season, episode, encoded_string, year, quality)
+    except Exception as e:
+        LOGGER.warning(f"[ANIME] metadata error for '{title}': {e}")
+        return None
+    if result is None:
+        return None
+    if not result.get("imdb_id") and result.get("tmdb_id"):
+        result["imdb_id"] = await _tmdb_external_imdb_id("tv", result["tmdb_id"])
+    if not result.get("imdb_id"):
+        LOGGER.info(f"[ANIME] No imdb id for '{title}' -> falling back to TMDb/Cinemeta")
+        return None
+    LOGGER.info(f"[ANIME] Matched '{result.get('title')}' [{result.get('imdb_id')}] S{season:02d}E{episode:02d}")
+    return result
+
+
+async def _fetch_anime_movie(title, encoded_string, year, quality) -> dict | None:
+    try:
+        result = await fetch_anime_movie_metadata(title, encoded_string, year, quality)
+    except Exception as e:
+        LOGGER.warning(f"[ANIME] movie metadata error for '{title}': {e}")
+        return None
+    if result is None:
+        return None
+    if not result.get("imdb_id") and result.get("tmdb_id"):
+        result["imdb_id"] = await _tmdb_external_imdb_id("movie", result["tmdb_id"])
+    if not result.get("imdb_id"):
+        LOGGER.info(f"[ANIME] No imdb id for movie '{title}' -> falling back to TMDb/Cinemeta")
+        return None
+    LOGGER.info(f"[ANIME] Matched movie '{result.get('title')}' [{result.get('imdb_id')}]")
+    return result
 
 
 #----- ── Main entry point ────────────────────────────────────────────────────────
