@@ -800,6 +800,7 @@ async def metadata(filename: str, channel: int, msg_id, override_id: str = None)
         LOGGER.warning(f"Invalid season/episode format for {filename}: {parsed}")
         return None
     elif season and not episode:
+        combined = {"season": season, "start": None, "end": None}
         episode = 1
     if not quality:
         LOGGER.warning(f"Skipping {filename}: No resolution (parsed={parsed})")
