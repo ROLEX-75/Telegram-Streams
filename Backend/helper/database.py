@@ -1,6 +1,7 @@
 import re
 import secrets
 import string
+import pytz
 from asyncio import create_task
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -1906,16 +1907,56 @@ class Database:
     #----- API Token Methods
     #-----
 
-    async def add_api_token(self, name: str, daily_limit_gb: float = None, monthly_limit_gb: float = None, user_id: int = None) -> dict:
+    async def _normalize_and_update_token_doc(self, token_doc: dict) -> dict:
+        if not token_doc or "usage" not in token_doc:
+            return token_doc
+
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        today_str = now.strftime("%Y-%m-%d")
+        month_str = now.strftime("%Y-%m")
+
+        usage = token_doc.get("usage", {})
+        daily = usage.get("daily", {})
+        monthly = usage.get("monthly", {})
+
+        updates = {}
+        if daily.get("date") != today_str:
+            usage["daily"] = {"date": today_str, "bytes": 0}
+            updates["usage.daily"] = {"date": today_str, "bytes": 0}
+
+        if monthly.get("month") != month_str:
+            usage["monthly"] = {"month": month_str, "bytes": 0}
+            updates["usage.monthly"] = {"month": month_str, "bytes": 0}
+
+        if updates and "token" in token_doc:
+            try:
+                await self.dbs["tracking"]["api_tokens"].update_one(
+                    {"token": token_doc["token"]},
+                    {"$set": updates}
+                )
+            except Exception as e:
+                LOGGER.error(f"Failed to auto-reset stale token usage in DB: {e}")
+
+        token_doc["usage"] = usage
+        return token_doc
+
+    async def add_api_token(self, name: str, daily_limit_gb: float = 0, monthly_limit_gb: float = 0, user_id: int = None) -> dict:
         #----- If a user_id is provided, return existing token if already created
         if user_id:
             existing = await self.dbs["tracking"]["api_tokens"].find_one({"user_id": user_id})
             if existing:
+                existing = await self._normalize_and_update_token_doc(existing)
                 return convert_objectid_to_str(existing)
 
         alphabet = string.ascii_letters + string.digits
         token = ''.join(secrets.choice(alphabet) for _ in range(32))
         
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        today_str = now.strftime("%Y-%m-%d")
+        month_str = now.strftime("%Y-%m")
+
         token_doc = {
             "name": name,
             "token": token,
@@ -1927,8 +1968,8 @@ class Database:
             },
             "usage": {
                 "total_bytes": 0,
-                "daily": {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "bytes": 0},
-                "monthly": {"month": datetime.now(timezone.utc).strftime("%Y-%m"), "bytes": 0}
+                "daily": {"date": today_str, "bytes": 0},
+                "monthly": {"month": month_str, "bytes": 0}
             }
         }
         
@@ -1937,12 +1978,16 @@ class Database:
 
     async def get_api_token(self, token: str) -> Optional[dict]:
         doc = await self.dbs["tracking"]["api_tokens"].find_one({"token": token})
-        return convert_objectid_to_str(doc) if doc else None
+        if not doc:
+            return None
+        doc = await self._normalize_and_update_token_doc(doc)
+        return convert_objectid_to_str(doc)
 
     async def get_all_api_tokens(self) -> List[dict]:
         cursor = self.dbs["tracking"]["api_tokens"].find().sort("created_at", DESCENDING)
         tokens = await cursor.to_list(None)
-        return [convert_objectid_to_str(token) for token in tokens]
+        normalized = [await self._normalize_and_update_token_doc(t) for t in tokens]
+        return [convert_objectid_to_str(t) for t in normalized]
 
     async def revoke_api_token(self, token: str) -> bool:
         result = await self.dbs["tracking"]["api_tokens"].delete_one({"token": token})
@@ -1957,8 +2002,10 @@ class Database:
         return result.modified_count > 0
 
     async def update_token_usage(self, token: str, bytes_delta: int):
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        month_str = datetime.now(timezone.utc).strftime("%Y-%m")
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        today_str = now.strftime("%Y-%m-%d")
+        month_str = now.strftime("%Y-%m")
         
         token_doc = await self.dbs["tracking"]["api_tokens"].find_one({"token": token})
         if not token_doc:
