@@ -2,8 +2,20 @@ import re
 from typing import Optional, Tuple
 
 _VIDEO_EXTENSIONS = r'mkv|mp4|avi|ts|m4v|mov|wmv|webm|flv|m2ts|mpg|mpeg'
-_TRAILING_NUMERIC_PATTERN = re.compile(rf'(?i)\.({_VIDEO_EXTENSIONS})\.(\d{{2,3}})$')
+_ARCHIVE_EXTENSIONS = r'zip'
+_TRAILING_NUMERIC_PATTERN = re.compile(rf'(?i)\.({_VIDEO_EXTENSIONS}|{_ARCHIVE_EXTENSIONS})\.(\d{{2,3}})(?=$|\D)')
 _NORMALIZE_RE = re.compile(r'[\.\-_ ]+')
+_ARCHIVE_SET = {'zip'}
+
+
+#----- Return the archive extension ('zip') if the name is a split archive part, else None
+def split_archive_ext(filename: str) -> Optional[str]:
+    if not filename:
+        return None
+    match = _find_split_match(filename.strip())
+    if match and match[3] and match[3].lower() in _ARCHIVE_SET:
+        return match[3].lower()
+    return None
 
 
 #----- Collapse separators into dots for stable grouping keys
@@ -67,6 +79,14 @@ def parse_combined_episodes(filename: str) -> Optional[dict]:
     return None
 
 
+#----- Stable grouping key for combined files (episode range/keyword removed)
+def combined_name_key(filename: str) -> str:
+    if not filename:
+        return ""
+    name = _COMBINED_EPISODES_RE.sub("", filename)
+    name = _COMBINED_KEYWORD_RE.sub("", name)
+    return re.sub(r"[\s._-]+", " ", name).strip().lower()
+
 # True when a combined file covers the requested season/episode.
 def combined_covers(combined: dict, season: Optional[int], episode: Optional[int]) -> bool:
     if season is not None and combined["season"] != int(season):
@@ -74,10 +94,6 @@ def combined_covers(combined: dict, season: Optional[int], episode: Optional[int
     if episode is None or combined["start"] is None:
         return True
     return combined["start"] <= int(episode) <= combined["end"]
-
-
-
-
 
 #----- Remove a trailing split-part suffix from a filename
 def strip_part_suffix(filename: str) -> str:

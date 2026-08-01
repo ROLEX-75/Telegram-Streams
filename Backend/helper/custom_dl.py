@@ -355,11 +355,17 @@ class ByteStreamer:
                         chunk_len = 0
 
                     now_ts = time.time()
-                    elapsed = now_ts - ACTIVE_STREAMS[stream_id]["last_ts"]
+                    stream_entry = ACTIVE_STREAMS.get(stream_id)
+                    if not stream_entry:
+                        # Stream was pruned due to inactivity
+                        yield out_chunk
+                        break
+                        
+                    elapsed = now_ts - stream_entry["last_ts"]
                     if elapsed <= 0:
                         elapsed = 1e-6
 
-                    recent = ACTIVE_STREAMS[stream_id]["recent_measurements"]
+                    recent = stream_entry["recent_measurements"]
                     recent.append((chunk_len, elapsed))
 
                     if len(recent) >= 2:
@@ -369,18 +375,18 @@ class ByteStreamer:
                     else:
                         instant_mbps = 0.0
 
-                    ACTIVE_STREAMS[stream_id]["total_bytes"] += chunk_len
-                    ACTIVE_STREAMS[stream_id]["last_ts"] = now_ts
+                    stream_entry["total_bytes"] += chunk_len
+                    stream_entry["last_ts"] = now_ts
 
-                    total_time = now_ts - ACTIVE_STREAMS[stream_id]["start_ts"]
+                    total_time = now_ts - stream_entry["start_ts"]
                     if total_time <= 0:
                         total_time = 1e-6
 
-                    ACTIVE_STREAMS[stream_id]["avg_mbps"] = (ACTIVE_STREAMS[stream_id]["total_bytes"] / (1024 * 1024)) / total_time
-                    ACTIVE_STREAMS[stream_id]["instant_mbps"] = instant_mbps
+                    stream_entry["avg_mbps"] = (stream_entry["total_bytes"] / (1024 * 1024)) / total_time
+                    stream_entry["instant_mbps"] = instant_mbps
 
-                    if instant_mbps > ACTIVE_STREAMS[stream_id]["peak_mbps"]:
-                        ACTIVE_STREAMS[stream_id]["peak_mbps"] = instant_mbps
+                    if instant_mbps > stream_entry["peak_mbps"]:
+                        stream_entry["peak_mbps"] = instant_mbps
 
                     yield out_chunk
 
@@ -390,12 +396,14 @@ class ByteStreamer:
                 stop_event.set()
                 if not producer_task.done():
                     producer_task.cancel()
-                ACTIVE_STREAMS[stream_id]["status"] = "cancelled"
+                if stream_id in ACTIVE_STREAMS:
+                    ACTIVE_STREAMS[stream_id]["status"] = "cancelled"
                 raise
             except Exception as e:
                 LOGGER.exception("Consumer error for stream %s: %s", stream_id, e)
                 stop_event.set()
-                ACTIVE_STREAMS[stream_id]["status"] = "error"
+                if stream_id in ACTIVE_STREAMS:
+                    ACTIVE_STREAMS[stream_id]["status"] = "error"
                 if not producer_task.done():
                     producer_task.cancel()
             finally:
