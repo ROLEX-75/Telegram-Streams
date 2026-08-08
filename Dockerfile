@@ -6,7 +6,7 @@ ENV LANG=en_US.UTF-8
 ENV PATH="/app/.venv/bin:$PATH"
 
 # ── Change these two to point at your GitHub repo ──────────────────────────
-ARG REPO=https://github.com/ROLEX-75/Telegram-Stremio
+ARG REPO=https://github.com/ROLEX-75/Telegram-Streams
 ARG BRANCH=main
 # ───────────────────────────────────────────────────────────────────────────
 
