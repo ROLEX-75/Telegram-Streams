@@ -130,9 +130,7 @@ def _parse_central_directory(tail, tail_base, zip_size):
     return first_entry
 
 
-#----- Locate the streamable (STORED) inner file inside a (possibly split) zip.
-#----- `read` is an async callable read(start, length) -> bytes over the concatenated zip.
-async def resolve_zip_entry(read, zip_size):
+async def _resolve_single_zip_entry(read, zip_size):
     try:
         video_exts = (".mkv", ".mp4", ".avi", ".ts", ".m4v", ".mov", ".wmv", ".webm", ".flv")
         head = await read(0, min(65536, zip_size))
@@ -161,5 +159,33 @@ async def resolve_zip_entry(read, zip_size):
         return {"method": STORED, "name": cd["name"], "data_offset": data_offset,
                 "size": cd["size"], "comp_size": cd["comp_size"], "has_descriptor": False}
     except Exception as e:
-        LOGGER.warning(f"[ZIP] Failed to resolve inner entry: {e}")
+        LOGGER.warning(f"[ZIP] Failed to resolve single entry: {e}")
         return None
+
+
+#----- Locate the streamable (STORED) inner file inside a (possibly split) zip.
+#----- `read` is an async callable read(start, length) -> bytes over the concatenated zip.
+#----- Supports nested STORED zip archives recursively.
+async def resolve_zip_entry(read, zip_size):
+    entry = await _resolve_single_zip_entry(read, zip_size)
+    if not entry:
+        return None
+
+    # Check if the resolved entry is itself a ZIP archive by reading its signature
+    try:
+        first_4 = await read(entry["data_offset"], 4)
+        if first_4 == b"PK\x03\x04":
+            LOGGER.info(f"[ZIP] Nested archive detected inside '{entry['name']}'. Resolving recursively...")
+            
+            async def nested_read(off, length):
+                return await read(entry["data_offset"] + off, length)
+                
+            nested_entry = await resolve_zip_entry(nested_read, entry["size"])
+            if nested_entry:
+                # Adjust data offset relative to the parent archive
+                nested_entry["data_offset"] = entry["data_offset"] + nested_entry["data_offset"]
+                return nested_entry
+    except Exception as e:
+        LOGGER.warning(f"[ZIP] Failed to resolve nested zip: {e}")
+
+    return entry
