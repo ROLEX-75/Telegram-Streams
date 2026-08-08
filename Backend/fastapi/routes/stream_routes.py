@@ -214,18 +214,22 @@ async def thumb_handler(id: str):
 @router.head("/dl/{token}/{id}/{name}")
 async def stream_handler(request: Request, token: str, id: str, name: str, token_data: dict = Depends(verify_token)):
     decoded = await decode_string(id)
+    LOGGER.info(f"[STREAM DISPATCH] token={token} id={id} decoded={decoded}")
 
     if decoded.get("global"):
         if decoded.get("zip"):
+            LOGGER.info("[STREAM DISPATCH] Routing to global_zip_media_streamer")
             return await global_zip_media_streamer(
                 request=request, parts_payload=decoded["parts"],
                 token=token, token_data=token_data, stream_id_hash=id,
             )
         if "parts" in decoded:
+            LOGGER.info("[STREAM DISPATCH] Routing to global_virtual_media_streamer")
             return await global_virtual_media_streamer(
                 request=request, parts_payload=decoded["parts"],
                 token=token, token_data=token_data, stream_id_hash=id,
             )
+        LOGGER.info("[STREAM DISPATCH] Routing to global_media_streamer")
         return await global_media_streamer(
             request=request, chat_id=int(decoded["chat_id"]), msg_id=int(decoded["msg_id"]),
             token=token, token_data=token_data, stream_id_hash=id,
@@ -233,10 +237,12 @@ async def stream_handler(request: Request, token: str, id: str, name: str, token
 
     if "parts" in decoded:
         if decoded.get("zip"):
+            LOGGER.info("[STREAM DISPATCH] Routing to db_zip_media_streamer")
             return await db_zip_media_streamer(
                 request=request, parts_payload=decoded["parts"],
                 token=token, token_data=token_data, stream_id_hash=id,
             )
+        LOGGER.info("[STREAM DISPATCH] Routing to virtual_media_streamer")
         return await virtual_media_streamer(
             request=request, parts_payload=decoded["parts"],
             token=token, token_data=token_data, stream_id_hash=id,
