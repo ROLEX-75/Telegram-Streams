@@ -546,6 +546,7 @@ async def _zip_media_streamer(request, parts_payload, token, token_data, stream_
         return await _read_virtual_range(parts, off, length, streamer, request, client_index, parallelism, prefetch_count)
 
     entry = await resolve_zip_entry(_read, zip_size)
+    LOGGER.info(f"[ZIP_STREAMER] Resolved entry: {entry}")
     if not entry:
         LOGGER.error(f"ZIP Streaming Failed: Unreadable or incomplete archive for stream_id {stream_id_hash}")
         raise HTTPException(status_code=415, detail="Unreadable or incomplete split archive")
@@ -558,6 +559,7 @@ async def _zip_media_streamer(request, parts_payload, token, token_data, stream_
 
     inner_size = entry["size"]
     data_offset = entry["data_offset"]
+    LOGGER.info(f"[ZIP_STREAMER] inner_size={inner_size} data_offset={data_offset} zip_size={zip_size}")
     if inner_size <= 0 or data_offset + inner_size > zip_size:
         LOGGER.error(f"ZIP Streaming Failed: Unexpected layout (size={inner_size}, offset={data_offset}, zip_size={zip_size})")
         raise HTTPException(status_code=415, detail="Split archive has an unexpected layout")
@@ -580,6 +582,7 @@ async def _zip_media_streamer(request, parts_payload, token, token_data, stream_
     asyncio.create_task(track_usage(stream_id, token, token_data))
 
     headers, status = _build_stream_headers(mime_type, inner_name, req_length, range_header, start, end, inner_size)
+    LOGGER.info(f"[ZIP_STREAMER] Built headers: {headers} status: {status}")
     if request.method == "HEAD":
         return PlainResponse(status_code=status, headers=headers)
 
