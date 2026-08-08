@@ -785,8 +785,7 @@ async def metadata(filename: str, channel: int, msg_id, override_id: str = None)
         LOGGER.info(f"Skipping {filename}: contains 'combined'")
         return None
 
-    split_info = None if combined else parse_split_info(filename)
-    part_number = split_info[1] if split_info else None
+
 
     title = parsed.get("title")
     season = parsed.get("season")
