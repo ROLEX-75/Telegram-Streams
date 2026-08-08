@@ -60,48 +60,88 @@ def parse_local_header(buf):
     }
 
 
-#----- Parse the first central-directory record from a tail buffer
+#----- Scan the central-directory records from a tail buffer and return the best video entry
 def _parse_central_directory(tail, tail_base, zip_size):
     eocd = tail.rfind(b"PK\x05\x06")
     if eocd < 0:
         return None
     cd_offset = _u32(tail, eocd + 16)
+    cd_size = _u32(tail, eocd + 12)
 
     z64loc = tail.rfind(b"PK\x06\x07")
-    if cd_offset == 0xFFFFFFFF and z64loc >= 0:
+    if (cd_offset == 0xFFFFFFFF or cd_size == 0xFFFFFFFF) and z64loc >= 0:
         z64_eocd_off = _u64(tail, z64loc + 8)
         rel = z64_eocd_off - tail_base
         if 0 <= rel < len(tail) and tail[rel:rel + 4] == b"PK\x06\x06":
             cd_offset = _u64(tail, rel + 48)
+            cd_size = _u64(tail, rel + 40)
 
     rel_cd = cd_offset - tail_base
-    if rel_cd < 0 or rel_cd + 46 > len(tail) or tail[rel_cd:rel_cd + 4] != b"PK\x01\x02":
+    if rel_cd < 0 or rel_cd >= len(tail):
         return None
 
+    video_exts = (".mkv", ".mp4", ".avi", ".ts", ".m4v", ".mov", ".wmv", ".webm", ".flv")
+    first_entry = None
     b = tail
     o = rel_cd
-    method = _u16(b, o + 10)
-    comp = _u32(b, o + 20)
-    uncomp = _u32(b, o + 24)
-    name_len = _u16(b, o + 28)
-    extra_len = _u16(b, o + 30)
-    comment_len = _u16(b, o + 32)
-    local_offset = _u32(b, o + 42)
-    name = b[o + 46:o + 46 + name_len].decode("utf-8", "ignore")
-    extra = b[o + 46 + name_len:o + 46 + name_len + extra_len]
-    if uncomp == 0xFFFFFFFF or comp == 0xFFFFFFFF or local_offset == 0xFFFFFFFF:
-        uncomp, comp, local_offset = _zip64_sizes(extra, uncomp, comp, need_offset=True, offset=local_offset)
-    return {"method": method, "name": name, "size": uncomp, "comp_size": comp, "local_offset": local_offset}
+    cd_end = rel_cd + cd_size
+    if cd_end > len(tail):
+        cd_end = len(tail)
+
+    while o + 46 <= cd_end:
+        if b[o:o + 4] != b"PK\x01\x02":
+            break
+        method = _u16(b, o + 10)
+        comp = _u32(b, o + 20)
+        uncomp = _u32(b, o + 24)
+        name_len = _u16(b, o + 28)
+        extra_len = _u16(b, o + 30)
+        comment_len = _u16(b, o + 32)
+        local_offset = _u32(b, o + 42)
+
+        if o + 46 + name_len > cd_end:
+            break
+
+        name = b[o + 46:o + 46 + name_len].decode("utf-8", "ignore")
+        extra = b[o + 46 + name_len:o + 46 + name_len + extra_len]
+
+        if uncomp == 0xFFFFFFFF or comp == 0xFFFFFFFF or local_offset == 0xFFFFFFFF:
+            uncomp, comp, local_offset = _zip64_sizes(extra, uncomp, comp, need_offset=True, offset=local_offset)
+
+        entry = {
+            "method": method,
+            "name": name,
+            "size": uncomp,
+            "comp_size": comp,
+            "local_offset": local_offset
+        }
+
+        name_lower = name.lower()
+        is_video = name_lower.endswith(video_exts) and not name_lower.split("/")[-1].startswith("._") and "__macosx" not in name_lower
+
+        if is_video:
+            return entry
+
+        if first_entry is None:
+            first_entry = entry
+
+        o += 46 + name_len + extra_len + comment_len
+
+    return first_entry
 
 
 #----- Locate the streamable (STORED) inner file inside a (possibly split) zip.
 #----- `read` is an async callable read(start, length) -> bytes over the concatenated zip.
 async def resolve_zip_entry(read, zip_size):
     try:
+        video_exts = (".mkv", ".mp4", ".avi", ".ts", ".m4v", ".mov", ".wmv", ".webm", ".flv")
         head = await read(0, min(65536, zip_size))
         lh = parse_local_header(head)
+        name_lower = (lh.get("name") or "").lower() if lh else ""
+        is_video = name_lower.endswith(video_exts) and not name_lower.split("/")[-1].startswith("._") and "__macosx" not in name_lower
         if (lh and lh["method"] == STORED and lh["size"] > 0
                 and not lh["has_descriptor"]
+                and is_video
                 and lh["data_offset"] + lh["size"] <= zip_size):
             return lh
 
