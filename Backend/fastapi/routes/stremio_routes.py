@@ -176,7 +176,7 @@ def format_stream_details(filename: str, quality: str, size: str, is_split: bool
     resolution = parsed.get("resolution") or quality or "HD"
     quality_type = parsed.get("quality", "")
 
-    if is_split:
+    if is_split and split_count != 1:
         # Build stream name with quality type when available
         if quality_type:
             stream_name = f"Telegram | {resolution} | {quality_type} | Split Video"
@@ -188,7 +188,10 @@ def format_stream_details(filename: str, quality: str, size: str, is_split: bool
         split_label = f" [Split x{split_count}]" if split_count > 1 else " [Split]"
         stream_title = f"{clean_filename}{split_label}\n\n📦 {size}"
     else:
-        stream_name = f"Telegram | {resolution}"
+        if quality_type:
+            stream_name = f"Telegram | {resolution} | {quality_type}"
+        else:
+            stream_name = f"Telegram | {resolution}"
         stream_title = f"{filename}\n\n💾 {size}"
 
     return (stream_name, stream_title)
